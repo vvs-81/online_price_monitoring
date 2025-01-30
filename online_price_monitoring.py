@@ -22,8 +22,8 @@ def fetch_product_info(url):
         return "Ошибка"
 
 def fetch_competitor_prices(product_name):
-    """Находит цены на товар на сайтах конкурентов."""
-    encoded_name = urllib.parse.quote_plus(product_name)  # Кодируем для URL
+    """Находит цены на товар на сайтах конкурентов, парсит первую найденную цену"""
+    encoded_name = urllib.parse.quote_plus(product_name)
     competitors = [
         ("off-mar.ru", f"https://off-mar.ru/search/?q={encoded_name}"),
         ("bumaga27.ru", f"https://www.bumaga27.ru/search/?q={encoded_name}"),
@@ -38,15 +38,18 @@ def fetch_competitor_prices(product_name):
             response = requests.get(search_url, headers=headers)
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            price_tag = soup.find("span", class_="price") or soup.find("div", class_="product-price") or soup.find("span", class_="product-cost")
+            # Попытка найти первую доступную цену на странице
+            price_tags = soup.find_all("span", class_="price") or soup.find_all("div", class_="product-price") or soup.find_all("span", class_="product-cost")
             
-            if price_tag:
-                price_text = price_tag.text.replace("₽", "").replace(" ", "").strip()
-                try:
-                    price = float(price_text)
-                    results.append((site, price))
-                except ValueError:
-                    continue
+            if price_tags:
+                for price_tag in price_tags:
+                    price_text = price_tag.text.replace("₽", "").replace(" ", "").strip()
+                    try:
+                        price = float(price_text)
+                        results.append((site, price))
+                        break  # Берем первую найденную цену
+                    except ValueError:
+                        continue
         except:
             continue
     
