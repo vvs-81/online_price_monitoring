@@ -2,94 +2,49 @@ import streamlit as st
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-import urllib.parse
 
-def fetch_product_info(url):
-    """Получает цену товара с lunsvet.com"""
+def fetch_price_and_name(url):
+    """Получает название и цену товара по ссылке."""
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        price = None
-        price_tag = soup.find("span", class_="price-value")
+        product_name = "Не найдено"
+        price = "Цена не найдена"
         
+        name_tag = soup.find("h1")  # Заголовок товара
+        price_tag = soup.find("span", class_="price") or soup.find("div", class_="product-price") or soup.find("span", class_="product-cost")
+        
+        if name_tag:
+            product_name = name_tag.text.strip()
         if price_tag:
             try:
                 price = float(price_tag.text.replace("₽", "").replace(" ", "").strip())
             except ValueError:
-                price = None
+                price = "Цена не найдена"
         
-        return price
+        return product_name, price
     except Exception as e:
-        return None
-
-def fetch_competitor_prices(product_name):
-    """Находит цены на товар на сайтах конкурентов, парсит первую найденную цену"""
-    encoded_name = urllib.parse.quote_plus(product_name)
-    competitors = [
-        ("off-mar.ru", f"https://off-mar.ru/search/?q={encoded_name}"),
-        ("bumaga27.ru", f"https://www.bumaga27.ru/search/?q={encoded_name}"),
-        ("kanz27.ru", f"https://kanz27.ru/catalog/?search={encoded_name}"),
-        ("klayd.ru", f"https://klayd.ru/catalog/?search={encoded_name}")
-    ]
-    
-    results = []
-    for site, search_url in competitors:
-        try:
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.get(search_url, headers=headers)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            price_tags = soup.find_all("span", class_="price") or soup.find_all("div", class_="product-price") or soup.find_all("span", class_="product-cost")
-            
-            if price_tags:
-                for price_tag in price_tags:
-                    price_text = price_tag.text.replace("₽", "").replace(" ", "").strip()
-                    try:
-                        price = float(price_text)
-                        results.append((site, price))
-                        break  # Берем первую найденную цену
-                    except ValueError:
-                        continue
-        except:
-            continue
-    
-    return results
+        return "Ошибка", "Ошибка"
 
 # Интерфейс Streamlit
 st.title("Автоматический мониторинг цен конкурентов")
 
-# Ввод URL товара на вашем сайте
-url_input = st.text_input("Введите ссылку на товар с вашего сайта")
-
-# Ввод названия товара для поиска
-product_name_input = st.text_input("Введите название товара для поиска у конкурентов")
+# Ввод ссылок на товары конкурентов
+competitor_urls = st.text_area("Введите ссылки на товары конкурентов (по одной в строке)").split("\n")
 
 if st.button("Анализировать цены"):
-    if url_input and product_name_input:
-        our_price = fetch_product_info(url_input)
-        competitor_prices = fetch_competitor_prices(product_name_input)
+    if competitor_urls:
+        results = []
+        for url in competitor_urls:
+            url = url.strip()
+            if url:
+                product_name, price = fetch_price_and_name(url)
+                results.append((url, product_name, price))
         
-        if our_price is None:
-            st.warning("Не удалось получить цену с вашего сайта. Проверьте, доступен ли товар.")
-        elif competitor_prices:
-            competitor_prices.sort(key=lambda x: x[1])  # Сортировка по цене
-            lowest_price = competitor_prices[0][1]
-            lowest_competitor = competitor_prices[0][0]
-            price_difference = our_price - lowest_price if lowest_price is not None else None
-            
-            # Вывод результатов
-            st.write(f"**Название товара:** {product_name_input}")
-            st.write(f"**Наша цена:** {our_price} ₽")
-            if lowest_price is not None:
-                st.write(f"**Минимальная цена у конкурента:** {lowest_price} ₽ ({lowest_competitor})")
-                st.write(f"**Разница в цене:** {'+' if price_difference > 0 else ''}{price_difference} ₽")
-            
-            # Отображение всех цен конкурентов
-            df = pd.DataFrame(competitor_prices, columns=["Конкурент", "Цена, ₽"])
-            st.dataframe(df)
-        else:
-            st.warning("Не удалось найти цены у конкурентов. Проверьте, доступен ли товар на их сайтах.")
+        # Создание DataFrame и отображение результатов
+        df = pd.DataFrame(results, columns=["Ссылка", "Название товара", "Цена, ₽"])
+        st.dataframe(df)
     else:
-        st.warning("Введите ссылку на ваш товар и название для поиска!")
+        st.warning("Введите хотя бы одну ссылку на товар конкурента!")
