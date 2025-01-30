@@ -1,53 +1,51 @@
 import streamlit as st
 import pandas as pd
-import time
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
+import requests
+from bs4 import BeautifulSoup
 
 def fetch_price_and_name(url):
-    """Получает название и цену товара по ссылке через Selenium."""
+    """Получает HTML страницы и возвращает цену и название."""
     try:
-        options = webdriver.ChromeOptions()
-        options.add_argument("--headless")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers)
+        html_content = response.text
         
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=options)
-        
-        driver.get(url)
-        time.sleep(3)  # Ждем загрузку страницы
+        soup = BeautifulSoup(html_content, 'html.parser')
         
         product_name = "Не найдено"
         price = "Цена не найдена"
         
-        try:
-            product_name = driver.find_element(By.TAG_NAME, "h1").text.strip()
-        except:
-            pass
+        # Определяем сайт по URL и используем соответствующие селекторы
+        if "lunsvet.com" in url:
+            name_tag = soup.find("h1")
+            price_tag = soup.find("span", class_="price-value")
+        elif "off-mar.ru" in url:
+            name_tag = soup.find("h1")
+            price_tag = soup.find("div", class_="price")
+        elif "bumaga27.ru" in url:
+            name_tag = soup.find("h1")
+            price_tag = soup.find("span", class_="price")
+        elif "kanz27.ru" in url:
+            name_tag = soup.find("h1")
+            price_tag = soup.find("div", class_="price")
+        elif "klayd.ru" in url:
+            name_tag = soup.find("h1")
+            price_tag = soup.find("span", class_="price")
+        else:
+            name_tag = soup.find("h1")
+            price_tag = soup.find("span", class_="price") or soup.find("div", class_="product-price") or soup.find("span", class_="product-cost")
         
-        try:
-            if "lunsvet.com" in url:
-                price = driver.find_element(By.CLASS_NAME, "price-value").text.strip()
-            elif "off-mar.ru" in url:
-                price = driver.find_element(By.CLASS_NAME, "price").text.strip()
-            elif "bumaga27.ru" in url:
-                price = driver.find_element(By.CLASS_NAME, "price").text.strip()
-            elif "kanz27.ru" in url:
-                price = driver.find_element(By.CLASS_NAME, "price").text.strip()
-            elif "klayd.ru" in url:
-                price = driver.find_element(By.CLASS_NAME, "price").text.strip()
-            
-            price = float(price.replace("₽", "").replace(" ", "").strip())
-        except:
-            price = "Цена не найдена"
+        if name_tag:
+            product_name = name_tag.text.strip()
+        if price_tag:
+            try:
+                price = float(price_tag.text.replace("₽", "").replace(" ", "").strip())
+            except ValueError:
+                price = "Цена не найдена"
         
-        driver.quit()
-        return product_name, price
+        return product_name, price, html_content
     except Exception as e:
-        return "Ошибка", "Ошибка"
+        return "Ошибка", "Ошибка", ""
 
 # Интерфейс Streamlit
 st.title("Автоматический мониторинг цен конкурентов")
@@ -58,14 +56,21 @@ competitor_urls = st.text_area("Введите ссылки на товары к
 if st.button("Анализировать цены"):
     if competitor_urls:
         results = []
+        html_logs = []
         for url in competitor_urls:
             url = url.strip()
             if url:
-                product_name, price = fetch_price_and_name(url)
+                product_name, price, html_content = fetch_price_and_name(url)
                 results.append((url, product_name, price))
+                html_logs.append(f"URL: {url}\n\n" + html_content[:1000] + "...\n\n---\n\n")  # Ограничиваем вывод HTML до 1000 символов
         
         # Создание DataFrame и отображение результатов
         df = pd.DataFrame(results, columns=["Ссылка", "Название товара", "Цена, ₽"])
         st.dataframe(df)
+        
+        # Отображаем HTML код для отладки
+        with st.expander("Показать HTML-код загруженных страниц"):
+            for log in html_logs:
+                st.text(log)
     else:
         st.warning("Введите хотя бы одну ссылку на товар конкурента!")
