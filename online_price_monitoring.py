@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
+import urllib.parse
 
 def fetch_product_info(url):
     """Получает название и цену товара с lunsvet.com"""
@@ -27,11 +28,12 @@ def fetch_product_info(url):
 
 def fetch_competitor_prices(product_name):
     """Находит цены на товар на сайтах конкурентов."""
+    encoded_name = urllib.parse.quote_plus(product_name)  # Кодируем для URL
     competitors = [
-        ("off-mar.ru", f"https://off-mar.ru/search/?q={product_name}"),
-        ("bumaga27.ru", f"https://www.bumaga27.ru/search/?q={product_name}"),
-        ("kanz27.ru", f"https://kanz27.ru/catalog/?search={product_name}"),
-        ("klayd.ru", f"https://klayd.ru/catalog/?search={product_name}")
+        ("off-mar.ru", f"https://off-mar.ru/search/?q={encoded_name}"),
+        ("bumaga27.ru", f"https://www.bumaga27.ru/search/?q={encoded_name}"),
+        ("kanz27.ru", f"https://kanz27.ru/catalog/?search={encoded_name}"),
+        ("klayd.ru", f"https://klayd.ru/catalog/?search={encoded_name}")
     ]
     
     results = []
