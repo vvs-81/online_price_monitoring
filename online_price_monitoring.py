@@ -11,15 +11,18 @@ def fetch_product_info(url):
         response = requests.get(url, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        price = "Цена не найдена"
+        price = None
         price_tag = soup.find("span", class_="price-value")
         
         if price_tag:
-            price = float(price_tag.text.replace("₽", "").replace(" ", "").strip())
+            try:
+                price = float(price_tag.text.replace("₽", "").replace(" ", "").strip())
+            except ValueError:
+                price = None
         
         return price
     except Exception as e:
-        return "Ошибка"
+        return None
 
 def fetch_competitor_prices(product_name):
     """Находит цены на товар на сайтах конкурентов, парсит первую найденную цену"""
@@ -38,7 +41,6 @@ def fetch_competitor_prices(product_name):
             response = requests.get(search_url, headers=headers)
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Попытка найти первую доступную цену на странице
             price_tags = soup.find_all("span", class_="price") or soup.find_all("div", class_="product-price") or soup.find_all("span", class_="product-cost")
             
             if price_tags:
@@ -69,17 +71,20 @@ if st.button("Анализировать цены"):
         our_price = fetch_product_info(url_input)
         competitor_prices = fetch_competitor_prices(product_name_input)
         
-        if competitor_prices:
+        if our_price is None:
+            st.warning("Не удалось получить цену с вашего сайта. Проверьте, доступен ли товар.")
+        elif competitor_prices:
             competitor_prices.sort(key=lambda x: x[1])  # Сортировка по цене
             lowest_price = competitor_prices[0][1]
             lowest_competitor = competitor_prices[0][0]
-            price_difference = our_price - lowest_price
+            price_difference = our_price - lowest_price if lowest_price is not None else None
             
             # Вывод результатов
             st.write(f"**Название товара:** {product_name_input}")
             st.write(f"**Наша цена:** {our_price} ₽")
-            st.write(f"**Минимальная цена у конкурента:** {lowest_price} ₽ ({lowest_competitor})")
-            st.write(f"**Разница в цене:** {'+' if price_difference > 0 else ''}{price_difference} ₽")
+            if lowest_price is not None:
+                st.write(f"**Минимальная цена у конкурента:** {lowest_price} ₽ ({lowest_competitor})")
+                st.write(f"**Разница в цене:** {'+' if price_difference > 0 else ''}{price_difference} ₽")
             
             # Отображение всех цен конкурентов
             df = pd.DataFrame(competitor_prices, columns=["Конкурент", "Цена, ₽"])
