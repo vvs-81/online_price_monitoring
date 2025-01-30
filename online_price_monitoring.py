@@ -41,12 +41,16 @@ def fetch_competitor_prices(product_name):
             response = requests.get(search_url, headers=headers)
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Поиск цены (примерный, нужно адаптировать под каждый сайт)
-            price_tag = soup.find("span", class_="price") or soup.find("div", class_="product-price")
-            price = float(price_tag.text.replace("₽", "").replace(" ", "").strip()) if price_tag else None
+            # Поиск первой найденной цены на странице
+            price_tag = soup.find("span", class_="price") or soup.find("div", class_="product-price") or soup.find("span", class_="product-cost")
             
-            if price:
-                results.append((site, price))
+            if price_tag:
+                price_text = price_tag.text.replace("₽", "").replace(" ", "").strip()
+                try:
+                    price = float(price_text)
+                    results.append((site, price))
+                except ValueError:
+                    continue
         except:
             continue
     
@@ -79,6 +83,6 @@ if st.button("Анализировать цены"):
             df = pd.DataFrame(competitor_prices, columns=["Конкурент", "Цена, ₽"])
             st.dataframe(df)
         else:
-            st.warning("Не удалось найти цены у конкурентов.")
+            st.warning("Не удалось найти цены у конкурентов. Проверьте, доступен ли товар на их сайтах.")
     else:
         st.warning("Введите ссылку!")
