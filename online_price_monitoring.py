@@ -13,8 +13,25 @@ def fetch_price_and_name(url):
         product_name = "Не найдено"
         price = "Цена не найдена"
         
-        name_tag = soup.find("h1")  # Заголовок товара
-        price_tag = soup.find("span", class_="price") or soup.find("div", class_="product-price") or soup.find("span", class_="product-cost")
+        # Определяем сайт по URL
+        if "lunsvet.com" in url:
+            name_tag = soup.find("h1")
+            price_tag = soup.find("span", class_="price-value")
+        elif "off-mar.ru" in url:
+            name_tag = soup.find("h1")
+            price_tag = soup.find("div", class_="price")
+        elif "bumaga27.ru" in url:
+            name_tag = soup.find("h1")
+            price_tag = soup.find("span", class_="price")
+        elif "kanz27.ru" in url:
+            name_tag = soup.find("h1")
+            price_tag = soup.find("div", class_="price")
+        elif "klayd.ru" in url:
+            name_tag = soup.find("h1")
+            price_tag = soup.find("span", class_="price")
+        else:
+            name_tag = soup.find("h1")
+            price_tag = soup.find("span", class_="price") or soup.find("div", class_="product-price") or soup.find("span", class_="product-cost")
         
         if name_tag:
             product_name = name_tag.text.strip()
