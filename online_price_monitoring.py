@@ -3,57 +3,82 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
-def fetch_price(url):
-    """Функция для получения цены с указанного сайта."""
+def fetch_product_info(url):
+    """Получает название и цену товара с lunsvet.com"""
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
+        
+        product_name = "Не найдено"
         price = "Цена не найдена"
         
-        # Пример парсинга (нужно уточнять для каждого сайта)
-        if "off-mar.ru" in url:
-            price_tag = soup.find("span", class_="price")
-        elif "bumaga27.ru" in url:
-            price_tag = soup.find("div", class_="product-price")
-        elif "kanz27.ru" in url:
-            price_tag = soup.find("span", class_="price-new")
-        elif "klayd.ru" in url:
-            price_tag = soup.find("div", class_="product-price")
-        elif "lunsvet.com" in url:
-            price_tag = soup.find("span", class_="price-value")
-        else:
-            price_tag = None
+        name_tag = soup.find("h1")  # Заголовок товара
+        price_tag = soup.find("span", class_="price-value")
         
+        if name_tag:
+            product_name = name_tag.text.strip()
         if price_tag:
-            price = price_tag.text.strip()
+            price = float(price_tag.text.replace("₽", "").replace(" ", "").strip())
         
-        return price
+        return product_name, price
     except Exception as e:
-        return f"Ошибка: {e}"
+        return "Ошибка", "Ошибка"
+
+def fetch_competitor_prices(product_name):
+    """Находит цены на товар на сайтах конкурентов."""
+    competitors = [
+        ("off-mar.ru", f"https://off-mar.ru/search/?q={product_name}"),
+        ("bumaga27.ru", f"https://www.bumaga27.ru/search/?q={product_name}"),
+        ("kanz27.ru", f"https://kanz27.ru/catalog/?search={product_name}"),
+        ("klayd.ru", f"https://klayd.ru/catalog/?search={product_name}")
+    ]
+    
+    results = []
+    for site, search_url in competitors:
+        try:
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            response = requests.get(search_url, headers=headers)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Поиск цены (примерный, нужно адаптировать под каждый сайт)
+            price_tag = soup.find("span", class_="price") or soup.find("div", class_="product-price")
+            price = float(price_tag.text.replace("₽", "").replace(" ", "").strip()) if price_tag else None
+            
+            if price:
+                results.append((site, price))
+        except:
+            continue
+    
+    return results
 
 # Интерфейс Streamlit
-st.title("Онлайн-мониторинг цен конкурентов")
+st.title("Автоматический мониторинг цен конкурентов")
 
-# Ввод URL для мониторинга
-url_input = st.text_input("Введите ссылку на товар конкурента")
+# Ввод URL товара на вашем сайте
+url_input = st.text_input("Введите ссылку на товар с вашего сайта")
 
-if st.button("Проверить цену"):
+if st.button("Анализировать цены"):
     if url_input:
-        price = fetch_price(url_input)
-        st.write(f"Цена: {price}")
+        product_name, our_price = fetch_product_info(url_input)
+        competitor_prices = fetch_competitor_prices(product_name)
+        
+        if competitor_prices:
+            competitor_prices.sort(key=lambda x: x[1])  # Сортировка по цене
+            lowest_price = competitor_prices[0][1]
+            lowest_competitor = competitor_prices[0][0]
+            price_difference = our_price - lowest_price
+            
+            # Вывод результатов
+            st.write(f"**Название товара:** {product_name}")
+            st.write(f"**Наша цена:** {our_price} ₽")
+            st.write(f"**Минимальная цена у конкурента:** {lowest_price} ₽ ({lowest_competitor})")
+            st.write(f"**Разница в цене:** {'+' if price_difference > 0 else ''}{price_difference} ₽")
+            
+            # Отображение всех цен конкурентов
+            df = pd.DataFrame(competitor_prices, columns=["Конкурент", "Цена, ₽"])
+            st.dataframe(df)
+        else:
+            st.warning("Не удалось найти цены у конкурентов.")
     else:
         st.warning("Введите ссылку!")
-
-# Таблица для отображения данных
-st.subheader("История цен")
-data = {"Товар": ["Бумага Снегурочка А4", "Бумага SvetoCopy A4"],
-        "Сайт": ["off-mar.ru", "bumaga27.ru", "kanz27.ru", "klayd.ru", "lunsvet.com"],
-        "Цена, ₽": [fetch_price("https://off-mar.ru/product-category/kancelyarskie-tovary/bumaga-plenka/bumaga-ofisnaya/"), 
-                     fetch_price("https://www.bumaga27.ru/catalog/bumaga/bumaga_dlya_kopiy_i_pechati/?display=list&order=asc&sort=PRICE"),
-                     fetch_price("https://kanz27.ru/bumaga-dlya-ofisnoy-tekhniki/bumaga-formatnaya/"),
-                     fetch_price("https://klayd.ru/catalog/ofisnaya-yevropapir/"),
-                     fetch_price("https://lunsvet.com/catalog/kantselyariya/")],
-        "Дата обновления": ["2025-01-30", "2025-01-30", "2025-01-30", "2025-01-30", "2025-01-30"]}
-df = pd.DataFrame(data)
-st.dataframe(df)
