@@ -50,28 +50,30 @@ def parse_pagination_urls(soup: BeautifulSoup) -> List[str]:
 
 def parse_category_products(soup: BeautifulSoup) -> List[CategoryProductLink]:
 	results: List[CategoryProductLink] = []
-	# Woodmart/Aspro theme: grid items are div.wd-product.product under .products
-	for card in soup.select("div.products .product, .products .wd-product"):
-		classes = card.get("class", [])
-		if any("product-category" == cls or cls.startswith("product-category") for cls in classes):
-			# skip category tiles
-			continue
-		# URL: prefer image link, fallback to title link, then any product link
-		a = card.select_one("a.product-image-link") or card.select_one("h3.wd-entities-title a") or card.select_one("a[href*='/product/']")
-		if not a:
-			continue
-		url = a.get("href")
-		title = _text_or_none(card.select_one("h3.wd-entities-title, h2.woocommerce-loop-product__title, .product-title, h3"))
-		price_text = _text_or_none(card.select_one("span.price, .price .amount, .woocommerce-Price-amount"))
-		# Stock quantity on category card: span.av-qty
-		stock_quantity: Optional[int] = None
-		qty_text = _text_or_none(card.select_one("span.av-qty"))
-		if qty_text:
-			m = re.search(r"(\d+)", qty_text)
-			if m:
-				stock_quantity = int(m.group(1))
-		if url:
-			results.append(CategoryProductLink(url=url, title=title, price_text=price_text, stock_quantity=stock_quantity))
+	# Prefer the main loop grid to avoid sidebar/shortcode blocks
+	grids = soup.select("div.products.wd-products[data-source='main_loop'], div.products[data-source='main_loop']")
+	containers = grids if grids else soup.select("div.products")
+	for container in containers:
+		for card in container.select(".product, .wd-product"):
+			classes = card.get("class", [])
+			if any("product-category" == cls or cls.startswith("product-category") for cls in classes):
+				continue
+			# URL: prefer image link, fallback to title link, then any product link
+			a = card.select_one("a.product-image-link") or card.select_one("h3.wd-entities-title a") or card.select_one("a[href*='/product/']")
+			if not a:
+				continue
+			url = a.get("href")
+			title = _text_or_none(card.select_one("h3.wd-entities-title, h2.woocommerce-loop-product__title, .product-title, h3"))
+			price_text = _text_or_none(card.select_one("span.price, .price .amount, .woocommerce-Price-amount"))
+			# Stock quantity on category card: span.av-qty
+			stock_quantity: Optional[int] = None
+			qty_text = _text_or_none(card.select_one("span.av-qty"))
+			if qty_text:
+				m = re.search(r"(\d+)", qty_text)
+				if m:
+					stock_quantity = int(m.group(1))
+			if url:
+				results.append(CategoryProductLink(url=url, title=title, price_text=price_text, stock_quantity=stock_quantity))
 	return results
 
 
@@ -88,23 +90,28 @@ def _extract_price_parts(price_text: Optional[str]) -> Tuple[Optional[str], Opti
 def parse_product_page(url: str, soup: BeautifulSoup) -> ProductDetails:
 	title = _text_or_none(soup.select_one("h1.product_title, h1.entry-title, h1")) or ""
 	sku = _text_or_none(soup.select_one("span.sku, .product_meta span.sku"))
-	# price(s)
-	regular_price_text = _text_or_none(
-		soup.select_one("p.price del .amount, p.price del .woocommerce-Price-amount, del .amount, del .woocommerce-Price-amount")
-	)
-	sale_price_text = _text_or_none(
-		soup.select_one("p.price ins .amount, p.price ins .woocommerce-Price-amount, ins .amount, ins .woocommerce-Price-amount")
-	)
-	price_text = _text_or_none(
-		soup.select_one("p.price .amount, p.price .woocommerce-Price-amount, span.price .amount, span.price .woocommerce-Price-amount")
-	)
+	# Scope to product summary to avoid header/footer prices
+	summary = soup.select_one("div.product .summary, .product .summary, .summary.entry-summary")
+	regular_price_text = None
+	sale_price_text = None
+	price_text = None
+	if summary:
+		regular_price_text = _text_or_none(summary.select_one("p.price del .amount, del .woocommerce-Price-amount, del .amount"))
+		sale_price_text = _text_or_none(summary.select_one("p.price ins .amount, ins .woocommerce-Price-amount, ins .amount"))
+		price_text = _text_or_none(summary.select_one("p.price .amount, span.price .amount, .price .woocommerce-Price-amount"))
 	if price_text is None:
-		# fallback to any amount
-		price_text = _text_or_none(soup.select_one(".amount, .woocommerce-Price-amount"))
+		# conservative fallback: still try within product container
+		product_container = soup.select_one("div.product")
+		if product_container and not price_text:
+			price_text = _text_or_none(product_container.select_one(".price .amount, .price .woocommerce-Price-amount"))
 	# currency
 	_, currency = _extract_price_parts(price_text or regular_price_text or sale_price_text)
 	# stock
-	stock_el = soup.select_one("p.stock, .info-instock, .stock")
+	stock_el = None
+	if summary:
+		stock_el = summary.select_one(".stock, .info-instock, p.stock")
+	if stock_el is None:
+		stock_el = soup.select_one("div.product .stock, div.product p.stock")
 	stock_status = None
 	stock_quantity: Optional[int] = None
 	if stock_el:
