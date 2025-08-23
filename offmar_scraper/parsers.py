@@ -77,6 +77,22 @@ def parse_category_products(soup: BeautifulSoup) -> List[CategoryProductLink]:
 	return results
 
 
+def parse_category_links(soup: BeautifulSoup) -> List[str]:
+	# Extract subcategory tiles and menu links pointing to product-category
+	urls: List[str] = []
+	# Grid tiles
+	for a in soup.select(".products .product-category a, .category-grid-item.product-category a"):
+		href = a.get("href")
+		if href and "/product-category/" in href and href not in urls:
+			urls.append(href)
+	# Sidebar/menu category links
+	for a in soup.select("a[href*='/product-category/']"):
+		href = a.get("href")
+		if href and href not in urls:
+			urls.append(href)
+	return urls
+
+
 def _extract_price_parts(price_text: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
 	if not price_text:
 		return None, None

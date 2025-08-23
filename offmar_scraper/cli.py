@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import datetime as dt
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Set, Deque
+from collections import deque
 
 import typer
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 from .http_client import HttpClient
-from .parsers import parse_category_products, parse_pagination_urls, parse_product_page
+from .parsers import parse_category_products, parse_pagination_urls, parse_product_page, parse_category_links
 from .snapshot import SnapshotRow, write_snapshot, today_date_str
 from .sales import compute_sales_for_date, write_sales_csv
 from .sheets import append_rows, append_table_rows
@@ -202,6 +203,55 @@ def run_daily(
 				headers=headers,
 			)
 		print(f"Appended snapshot to Sheets tab '{sheets_tab_snapshots}'")
+
+
+@app.command()
+def scrape_all(
+	root: str = typer.Option("https://off-mar.ru/product-category/", help="Root category URL"),
+	outdir: Path = typer.Option(Path("data"), help="Output base directory"),
+	user_agent: str = typer.Option(_default_user_agent(), help="HTTP User-Agent"),
+	max_pages_per_category: Optional[int] = typer.Option(None, help="Limit pages per category"),
+	sheets_spreadsheet: Optional[str] = typer.Option(None, help="Spreadsheet to append snapshot"),
+	sheets_tab_snapshots: str = typer.Option("snapshots", help="Snapshots tab name"),
+	sa_path: str = typer.Option("gcp_service_account.json", help="Service account JSON path"),
+) -> None:
+	client = HttpClient(user_agent=user_agent)
+	visited: Set[str] = set()
+	queue: Deque[str] = deque([root])
+	all_categories: List[str] = []
+	# BFS over category links
+	while queue:
+		url = queue.popleft()
+		if url in visited:
+			continue
+		try:
+			resp = client.get(url)
+			soup = BeautifulSoup(resp.text, "lxml")
+			visited.add(url)
+			# if page displays products, treat as category to scrape
+			if soup.select("div.products"):  # heuristic: has product containers
+				all_categories.append(url)
+			# enqueue discovered category links
+			for href in parse_category_links(soup):
+				if href not in visited:
+					queue.append(href)
+		except Exception as e:
+			print(f"Discovery failed for {url}: {e}")
+	# De-duplicate, keep only URLs with /product-category/
+	all_categories = [u for u in dict.fromkeys([u for u in all_categories if "/product-category/" in u])]
+	print(f"Discovered categories: {len(all_categories)}")
+	# Scrape each category
+	for cat in all_categories:
+		print(f"Scraping category: {cat}")
+		scrape.callback(
+			category=cat,
+			outdir=outdir,
+			user_agent=user_agent,
+			max_pages=max_pages_per_category,
+			sheets_spreadsheet=sheets_spreadsheet,
+			sheets_tab_snapshots=sheets_tab_snapshots,
+			sa_path=sa_path,
+		)  # type: ignore
 
 
 if __name__ == "__main__":
