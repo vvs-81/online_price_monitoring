@@ -12,7 +12,7 @@ from .http_client import HttpClient
 from .parsers import parse_category_products, parse_pagination_urls, parse_product_page
 from .snapshot import SnapshotRow, write_snapshot, today_date_str
 from .sales import compute_sales_for_date, write_sales_csv
-from .sheets import append_rows
+from .sheets import append_rows, append_table_rows
 
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -31,6 +31,9 @@ def scrape(
 	outdir: Path = typer.Option(Path("data"), help="Output base directory"),
 	user_agent: str = typer.Option(_default_user_agent(), help="HTTP User-Agent"),
 	max_pages: Optional[int] = typer.Option(None, help="Limit number of pages to scrape"),
+	sheets_spreadsheet: Optional[str] = typer.Option(None, help="Spreadsheet to append snapshot"),
+	sheets_tab_snapshots: str = typer.Option("snapshots", help="Snapshots tab name"),
+	sa_path: str = typer.Option("gcp_service_account.json", help="Service account JSON path"),
 ) -> None:
 	client = HttpClient(user_agent=user_agent)
 	visited_pages: List[str] = []
@@ -80,6 +83,22 @@ def scrape(
 			print(f"Failed to parse {link.url}: {e}")
 	csv_path = write_snapshot(outdir, rows)
 	print(f"Wrote snapshot: {csv_path}")
+	# Auto-export snapshot rows to Sheets if configured
+	if sheets_spreadsheet:
+		# Read CSV (including header) and append; ensure headers present in sheet
+		import csv as _csv
+		with csv_path.open("r", encoding="utf-8") as f:
+			reader = list(_csv.reader(f))
+		if reader:
+			headers, data_rows = reader[0], reader[1:]
+			append_table_rows(
+				spreadsheet_name=sheets_spreadsheet,
+				tab_name=sheets_tab_snapshots,
+				rows=data_rows,
+				sa_path=sa_path,
+				headers=headers,
+			)
+			print(f"Appended snapshot ({len(data_rows)} rows) to Sheets tab '{sheets_tab_snapshots}'")
 
 
 @app.command()
@@ -98,11 +117,14 @@ def compute_sales(
 	out_path = write_sales_csv(out, rows)
 	print(f"Wrote sales: {out_path}")
 	if sheets_spreadsheet:
-		append_rows(
+		append_table_rows(
 			spreadsheet_name=sheets_spreadsheet,
 			tab_name=sheets_tab_sales,
 			rows=[r.to_csv_row() for r in rows],
 			sa_path=sa_path,
+			headers=[
+				"date","product_url","product_title","sku","units_sold","revenue_rub","price_used_text"
+			],
 		)
 		print(f"Appended {len(rows)} sales rows to Sheets tab '{sheets_tab_sales}'")
 
@@ -154,11 +176,14 @@ def run_daily(
 	print(f"Wrote sales: {out_sales}")
 	# Export to Sheets if configured
 	if sheets_spreadsheet:
-		append_rows(
+		append_table_rows(
 			spreadsheet_name=sheets_spreadsheet,
 			tab_name=sheets_tab_sales,
 			rows=[r.to_csv_row() for r in rows],
 			sa_path=sa_path,
+			headers=[
+				"date","product_url","product_title","sku","units_sold","revenue_rub","price_used_text"
+			],
 		)
 		print(f"Appended sales to Sheets tab '{sheets_tab_sales}'")
 		# Also append snapshots
@@ -167,12 +192,15 @@ def run_daily(
 		with csv_path.open("r", encoding="utf-8") as f:
 			reader = csv.reader(f)
 			rows_csv = list(reader)
-		append_rows(
-			spreadsheet_name=sheets_spreadsheet,
-			tab_name=sheets_tab_snapshots,
-			rows=rows_csv,
-			sa_path=sa_path,
-		)
+		if rows_csv:
+			headers, data_rows = rows_csv[0], rows_csv[1:]
+			append_table_rows(
+				spreadsheet_name=sheets_spreadsheet,
+				tab_name=sheets_tab_snapshots,
+				rows=data_rows,
+				sa_path=sa_path,
+				headers=headers,
+			)
 		print(f"Appended snapshot to Sheets tab '{sheets_tab_snapshots}'")
 
 
