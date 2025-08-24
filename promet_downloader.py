@@ -179,6 +179,20 @@ def parse_args() -> argparse.Namespace:
 	return parser.parse_args()
 
 
+def run_download(username: str, password: str, headless: bool, download_dir: Path) -> Path:
+	with sync_playwright() as p:
+		browser = p.chromium.launch(headless=headless)
+		context = browser.new_context(accept_downloads=True, locale="ru-RU")
+		page = context.new_page()
+		try:
+			perform_login(page, username, password)
+			file_path = click_export_and_download(page, Path(download_dir))
+			return file_path
+		finally:
+			context.close()
+			browser.close()
+
+
 def main() -> int:
 	load_dotenv()
 	args = parse_args()
@@ -194,18 +208,9 @@ def main() -> int:
 	download_dir.mkdir(parents=True, exist_ok=True)
 
 	print(f"Логин в Promet и выгрузка XLS... (headless={headless})")
-	with sync_playwright() as p:
-		browser = p.chromium.launch(headless=headless)
-		context = browser.new_context(accept_downloads=True, locale="ru-RU")
-		page = context.new_page()
-		try:
-			perform_login(page, username, password)
-			file_path = click_export_and_download(page, download_dir)
-			print(f"Файл сохранен: {file_path}")
-			return 0
-		finally:
-			context.close()
-			browser.close()
+	file_path = run_download(username=username, password=password, headless=headless, download_dir=download_dir)
+	print(f"Файл сохранен: {file_path}")
+	return 0
 
 
 if __name__ == "__main__":
